@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Live Web Assistant</title>
+    <title>Voice Live & Voice Agent Web Assistant</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎤 Voice Live Web Assistant</h1>
-            <p>Real-time conversational AI with the Azure Voice Live SDK</p>
+            <h1>🎤 Voice Live & Voice Agent Web Assistant</h1>
+            <p>Real-time conversational AI using the Azure Voice Live SDK</p>
         </header>
 
         <main>
@@ -19,15 +19,30 @@
                 <h2>Configuration</h2>
                 <div class="config-grid">
                     <div class="config-item">
-                        <label for="endpoint">Endpoint:</label>
-                        <input type="text" id="endpoint" value="wss://api.voicelive.com/v1" 
-                               placeholder="Voice Live service endpoint">
+                        <label>Connection Target:</label>
+                        <div class="auth-method-selector">
+                            <label class="radio-label">
+                                <input type="radio" name="targetType" value="voice-live" checked>
+                                Voice Live resource
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="targetType" value="voice-agent">
+                                Voice Agent WebSocket
+                            </label>
+                        </div>
+                        <small id="targetHelp">Connect to a Voice Live resource and configure the session below.</small>
                     </div>
-                    <div class="config-item">
+                    <div class="config-item config-wide">
+                        <label id="endpointLabel" for="endpoint">Voice Live Endpoint:</label>
+                        <input type="text" id="endpoint"
+                               placeholder="https://your-resource.services.ai.azure.com">
+                        <small id="endpointHelp">Enter the HTTPS endpoint shown on your Voice Live resource.</small>
+                    </div>
+                    <div id="apiKeyConfig" class="config-item">
                         <label for="apiKey">API Key:</label>
                         <input type="password" id="apiKey" placeholder="Your Voice Live API key">
                     </div>
-                    <div class="config-item">
+                    <div id="authConfig" class="config-item">
                         <label>Authentication Method:</label>
                         <div class="auth-method-selector">
                             <label class="radio-label">
@@ -41,7 +56,7 @@
                         </div>
                         <small>The local Vite server reuses your <code>az login</code> session. Do not expose this development server publicly.</small>
                     </div>
-                    <div class="config-item">
+                    <div id="voiceConfig" class="config-item">
                         <label for="voice">Voice:</label>
                         <select id="voice">
                             <optgroup label="OpenAI Voices">
@@ -64,10 +79,13 @@
                             </optgroup>
                         </select>
                     </div>
-                    <div class="config-item">
+                    <div id="instructionsConfig" class="config-item">
                         <label for="instructions">Instructions:</label>
                         <textarea id="instructions" rows="3" 
                                   placeholder="You are a helpful AI assistant...">You are a helpful AI assistant. Respond naturally and conversationally. Keep your responses concise but engaging.</textarea>
+                    </div>
+                    <div id="agentManagedConfigNote" class="config-item config-wide hidden">
+                        <small>The selected voice agent owns its model, voice, instructions, tools, and turn detection. The portal relays the same Voice Live protocol through the SDK without sending <code>session.update</code>.</small>
                     </div>
                     <div class="config-item">
                         <label>
@@ -140,7 +158,7 @@
         </main>
 
         <footer>
-            <p>Powered by Azure Voice Live SDK for TypeScript</p>
+            <p>Powered by the Azure Voice Live SDK for TypeScript</p>
         </footer>
     </div>
 

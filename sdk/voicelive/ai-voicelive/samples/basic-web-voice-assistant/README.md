@@ -1,6 +1,9 @@
-# 🎉 **Voice Live Web Assistant Sample - UPDATED FOR AZURE SDK HANDLER PATTERN!**
+# 🎉 **Voice Live & Voice Agent Web Assistant**
 
-A complete web-based voice assistant demonstrating the **Azure SDK handler-based pattern** and all real-time features of the Azure Voice Live SDK for TypeScript.
+A web-based assistant demonstrating the **Azure SDK handler-based pattern** and
+real-time audio features of the Azure Voice Live SDK for TypeScript. It can connect
+either to a Voice Live resource or to an existing Voice Agent endpoint that relays
+the Voice Live realtime protocol.
 
 ## ✅ **Status: UPDATED & FUNCTIONAL**
 - ✅ **Uses Azure SDK handler pattern** - follows EventHub/Service Bus model
@@ -11,6 +14,7 @@ A complete web-based voice assistant demonstrating the **Azure SDK handler-based
 - ✅ **Proper lifecycle management** - sessions can be disposed properly
 - ✅ **Professional UI** with real-time feedback
 - ✅ **Web Audio API** integration for microphone and speaker
+- ✅ **Voice Agent compatibility** through a local authenticated WebSocket bridge
 - ✅ **Production ready** with error handling and cleanup
 
 ## 🚀 **Quick Start**
@@ -28,20 +32,33 @@ npm run dev
 Opens at: **http://127.0.0.1:3000**
 
 ### 3. **Configure & Connect**
-1. Enter your **Voice Live endpoint** (for example, `https://your-resource.services.ai.azure.com`)
-2. Choose an authentication method:
+1. Choose a connection target:
+   - **Voice Live resource**: enter an endpoint such as
+     `https://your-resource.services.ai.azure.com`.
+   - **Voice Agent WebSocket**: paste the complete
+     `wss://agents.<region>.hyena.infra.ai.azure.com/.../endpoint/protocols/voice`
+     URL for an existing voice agent.
+2. For a Voice Live resource, choose an authentication method:
    - **API Key**: enter the resource API key.
    - **Azure CLI Credential**: run `az login` before starting Vite,
      then select this option. The local Vite server obtains a token for
      `https://ai.azure.com/.default`.
-3. Choose a **voice** (OpenAI, Azure standard, or preview Azure realtime native)
-4. Customize **instructions** (optional)
-5. Click **"Connect"**
+   Voice Agent connections always use the Azure CLI credential.
+3. For a Voice Live resource, choose a **voice** and customize the
+   **instructions**. Voice Agent connections use the configuration stored on the
+   selected agent.
+4. Click **"Connect"**
 
 > The Azure CLI option is for local development only. It exposes a same-origin
 > token endpoint from the Vite development server and therefore must not be
 > served on a public interface. For production browser applications, acquire
 > credentials and connect to Voice Live through a secured application backend.
+>
+> Browser WebSockets cannot set the `Authorization`, `Foundry-Features`, or
+> Hyena routing headers required by a Voice Agent endpoint. In Voice Agent mode,
+> the loopback-only Vite bridge adds those headers and relays protocol frames
+> unchanged. The browser still uses `VoiceLiveClient` / `VoiceLiveSession` for
+> the WebSocket session, typed events, and PCM audio streaming.
 >
 > The sample pins Voice Live API version `2025-10-01`, which is the version
 > exposed by standard Azure Voice Live resources.

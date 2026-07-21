@@ -94,26 +94,24 @@ class WebVoiceAssistantApp {
       this.hideError();
     });
 
-    // Handle auth method changes
+    // Handle target and auth method changes
+    const targetTypeRadios = document.querySelectorAll('input[name="targetType"]');
+    targetTypeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        this.updateTargetConfigurationUI();
+      });
+    });
+
     const authMethodRadios = document.querySelectorAll('input[name="authMethod"]');
-    const apiKeyInput = document.getElementById('apiKey') as HTMLInputElement;
-    const apiKeyContainer = apiKeyInput.parentElement!;
-    
     authMethodRadios.forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        const target = e.target as HTMLInputElement;
-        if (target.value === 'token') {
-          apiKeyContainer.style.display = 'none';
-          apiKeyInput.required = false;
-        } else {
-          apiKeyContainer.style.display = 'flex';
-          apiKeyInput.required = true;
-        }
+      radio.addEventListener('change', () => {
+        this.updateAuthenticationUI();
       });
     });
 
     // Load saved settings
     this.loadSettings();
+    this.updateTargetConfigurationUI();
   }
 
   private setupVoiceAssistantCallbacks(): void {
@@ -213,23 +211,114 @@ class WebVoiceAssistantApp {
   }
 
   private getConfiguration(): VoiceAssistantConfig {
-    const endpoint = (document.getElementById('endpoint') as HTMLInputElement).value;
+    const endpoint = (document.getElementById('endpoint') as HTMLInputElement).value.trim();
     const apiKey = (document.getElementById('apiKey') as HTMLInputElement).value;
     const voice = (document.getElementById('voice') as HTMLSelectElement).value;
     const instructions = (document.getElementById('instructions') as HTMLTextAreaElement).value;
     const debugMode = (document.getElementById('debugMode') as HTMLInputElement).checked;
+    const targetTypeElement = document.querySelector(
+      'input[name="targetType"]:checked'
+    ) as HTMLInputElement | null;
+    const targetType = targetTypeElement?.value === 'voice-agent' ? 'voice-agent' : 'voice-live';
     const authMethodElement = document.querySelector('input[name="authMethod"]:checked') as HTMLInputElement;
-    const useTokenCredential = authMethodElement ? authMethodElement.value === 'token' : false;
+    const useTokenCredential =
+      targetType === 'voice-agent' ||
+      (authMethodElement ? authMethodElement.value === 'token' : false);
 
     if (!endpoint) {
       throw new Error('Endpoint is required');
+    }
+
+    if (targetType === 'voice-agent') {
+      let voiceAgentUrl: URL;
+      try {
+        voiceAgentUrl = new URL(endpoint);
+      } catch {
+        throw new Error('Voice Agent WebSocket URL is invalid');
+      }
+      if (
+        !['ws:', 'wss:'].includes(voiceAgentUrl.protocol) ||
+        !voiceAgentUrl.pathname.endsWith('/endpoint/protocols/voice')
+      ) {
+        throw new Error('Enter a ws:// or wss:// Agents protocols/voice endpoint');
+      }
     }
 
     if (!useTokenCredential && !apiKey) {
       throw new Error('API key is required when using API key authentication');
     }
 
-    return { endpoint, apiKey, voice, instructions, debugMode, useTokenCredential };
+    return {
+      targetType,
+      endpoint,
+      apiKey,
+      voice,
+      instructions,
+      debugMode,
+      useTokenCredential
+    };
+  }
+
+  private updateTargetConfigurationUI(): void {
+    const targetType = (
+      document.querySelector('input[name="targetType"]:checked') as HTMLInputElement | null
+    )?.value;
+    const isVoiceAgent = targetType === 'voice-agent';
+    const endpointLabel = document.getElementById('endpointLabel')!;
+    const endpointInput = document.getElementById('endpoint') as HTMLInputElement;
+    const endpointHelp = document.getElementById('endpointHelp')!;
+    const targetHelp = document.getElementById('targetHelp')!;
+    const apiKeyRadio = document.querySelector(
+      'input[name="authMethod"][value="apikey"]'
+    ) as HTMLInputElement;
+    const tokenRadio = document.querySelector(
+      'input[name="authMethod"][value="token"]'
+    ) as HTMLInputElement;
+    const voiceConfig = document.getElementById('voiceConfig')!;
+    const instructionsConfig = document.getElementById('instructionsConfig')!;
+    const voiceInput = document.getElementById('voice') as HTMLSelectElement;
+    const instructionsInput = document.getElementById('instructions') as HTMLTextAreaElement;
+    const agentManagedConfigNote = document.getElementById('agentManagedConfigNote')!;
+
+    endpointLabel.textContent = isVoiceAgent
+      ? 'Voice Agent WebSocket URL:'
+      : 'Voice Live Endpoint:';
+    endpointInput.placeholder = isVoiceAgent
+      ? 'wss://agents.<region>.hyena.infra.ai.azure.com/.../endpoint/protocols/voice'
+      : 'https://your-resource.services.ai.azure.com';
+    endpointHelp.textContent = isVoiceAgent
+      ? 'Paste the complete Agents protocols/voice WebSocket URL. Missing api-version and agent_session_id values are added locally.'
+      : 'Enter the HTTPS endpoint shown on your Voice Live resource.';
+    targetHelp.textContent = isVoiceAgent
+      ? 'Connect to an existing voice agent that exposes the Voice Live realtime protocol.'
+      : 'Connect to a Voice Live resource and configure the session below.';
+
+    apiKeyRadio.disabled = isVoiceAgent;
+    if (isVoiceAgent) {
+      tokenRadio.click();
+    }
+
+    voiceInput.disabled = isVoiceAgent;
+    instructionsInput.disabled = isVoiceAgent;
+    voiceConfig.classList.toggle('config-disabled', isVoiceAgent);
+    instructionsConfig.classList.toggle('config-disabled', isVoiceAgent);
+    agentManagedConfigNote.classList.toggle('hidden', !isVoiceAgent);
+    this.updateAuthenticationUI();
+  }
+
+  private updateAuthenticationUI(): void {
+    const targetType = (
+      document.querySelector('input[name="targetType"]:checked') as HTMLInputElement | null
+    )?.value;
+    const authMethod = (
+      document.querySelector('input[name="authMethod"]:checked') as HTMLInputElement | null
+    )?.value;
+    const useTokenCredential = targetType === 'voice-agent' || authMethod === 'token';
+    const apiKeyInput = document.getElementById('apiKey') as HTMLInputElement;
+    const apiKeyContainer = document.getElementById('apiKeyConfig')!;
+
+    apiKeyContainer.style.display = useTokenCredential ? 'none' : 'flex';
+    apiKeyInput.required = !useTokenCredential;
   }
 
   private updateConnectionStatus(status: string): void {
@@ -367,6 +456,8 @@ class WebVoiceAssistantApp {
       'connected',
       'disconnected',
       'error',
+      'session.created',
+      'session.updated',
       'response.created',
       'response.done',
       'speech.started',
@@ -423,6 +514,7 @@ class WebVoiceAssistantApp {
   private saveSettings(config: VoiceAssistantConfig): void {
     try {
       localStorage.setItem('voiceLiveSettings', JSON.stringify({
+        targetType: config.targetType,
         endpoint: config.endpoint,
         voice: config.voice,
         instructions: config.instructions,
@@ -440,6 +532,12 @@ class WebVoiceAssistantApp {
       if (saved) {
         const settings = JSON.parse(saved);
         
+        if (settings.targetType === 'voice-agent' || settings.targetType === 'voice-live') {
+          const targetRadio = document.querySelector(
+            `input[name="targetType"][value="${settings.targetType}"]`
+          ) as HTMLInputElement | null;
+          targetRadio?.click();
+        }
         if (settings.endpoint) {
           (document.getElementById('endpoint') as HTMLInputElement).value = settings.endpoint;
         }
@@ -449,7 +547,10 @@ class WebVoiceAssistantApp {
         if (settings.instructions) {
           (document.getElementById('instructions') as HTMLTextAreaElement).value = settings.instructions;
         }
-        if (typeof settings.useTokenCredential === 'boolean') {
+        if (
+          settings.targetType !== 'voice-agent' &&
+          typeof settings.useTokenCredential === 'boolean'
+        ) {
           const authMethod = settings.useTokenCredential ? 'token' : 'apikey';
           const authRadio = document.querySelector(
             `input[name="authMethod"][value="${authMethod}"]`
@@ -482,7 +583,10 @@ document.addEventListener('DOMContentLoaded', () => {
   (window as any).voiceAssistant = app.getVoiceAssistant();
   
   // Hot reload indicator
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ) {
     console.log('🔥 Hot reload enabled - SDK changes will auto-update');
     
     // Show reload indicator in dev mode

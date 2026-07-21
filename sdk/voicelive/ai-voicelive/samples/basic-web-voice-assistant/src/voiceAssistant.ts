@@ -64,6 +64,7 @@ class LocalAzureCredential implements TokenCredential {
 }
 
 export interface VoiceAssistantConfig {
+  targetType: 'voice-live' | 'voice-agent';
   endpoint: string;
   apiKey?: string;
   useTokenCredential?: boolean;
@@ -111,6 +112,7 @@ export class VoiceAssistant {
   private isPlayingAudio = false;
   private nextAudioStartTime = 0;
   private currentAudioSources: AudioBufferSourceNode[] = [];
+  private isVoiceAgentConnection = false;
 
   constructor() {
     this.audioCapture = new SimpleAudioCapture();
@@ -127,9 +129,11 @@ export class VoiceAssistant {
       // Create appropriate credential based on configuration
       const credential = this._createCredential(config);
       
-      // Create session options
-      const sessionOptions: any = {
-        connectionTimeoutInMs: 30000,
+      this.isVoiceAgentConnection = config.targetType === 'voice-agent';
+
+      // Voice Agent startup can include agent resolution and upstream Voice Live setup.
+      const sessionOptions = {
+        connectionTimeoutInMs: this.isVoiceAgentConnection ? 65000 : 30000,
       };
 
       console.log(`🔑 Using credential type: ${config.useTokenCredential ? 'TokenCredential' : 'API Key'}`);
@@ -141,21 +145,44 @@ export class VoiceAssistant {
         console.log('📡 Watch Events panel for real-time SDK events');
       }
 
-      // Create Voice Live client. `apiVersion` defaults to the latest known
-      // version, but this sample pins the API version exposed by Azure resources.
-      this.client = new VoiceLiveClient(config.endpoint, credential, {
+      const clientEndpoint = this.isVoiceAgentConnection
+        ? this.createVoiceAgentProxyEndpoint(config.endpoint)
+        : config.endpoint;
+
+      // The local proxy preserves the supplied Voice Agent URL while the SDK
+      // continues to own the browser WebSocket and Voice Live protocol.
+      this.client = new VoiceLiveClient(clientEndpoint, credential, {
         apiVersion: VOICE_LIVE_API_VERSION,
         defaultSessionOptions: sessionOptions
       });
-      
-      // Create and connect a session with a model compatible with the selected voice.
-      this.session = await this.client.startSession(this.getModelForVoice(config.voice), sessionOptions);
-      
-      // Setup handler-based event subscription (Azure SDK pattern)
-      this.subscription = this.session.subscribe(this.createEventHandlers());
-      
-      // Configure session
-      await this.configureSession(config);
+
+      let markAgentSessionReady: (() => void) | undefined;
+      let markAgentSessionFailed: ((error: Error) => void) | undefined;
+      const agentSessionReady = this.isVoiceAgentConnection
+        ? new Promise<void>((resolve, reject) => {
+            markAgentSessionReady = resolve;
+            markAgentSessionFailed = reject;
+          })
+        : undefined;
+
+      // Subscribe before connecting so immediate session.created/session.updated
+      // events from the Voice Agent orchestrator are not missed.
+      this.session = this.client.createSession(
+        this.isVoiceAgentConnection ? 'voice-agent-proxy' : this.getModelForVoice(config.voice),
+        sessionOptions
+      );
+      this.subscription = this.session.subscribe(
+        this.createEventHandlers(markAgentSessionReady, markAgentSessionFailed)
+      );
+      await this.session.connect();
+
+      if (agentSessionReady) {
+        await this.waitForAgentSessionReady(agentSessionReady);
+      } else {
+        // A Voice Live resource is configured per session. A Voice Agent already
+        // owns its model, instructions, voice, tools, and audio stack.
+        await this.configureSession(config);
+      }
       
       this.isConnected = true;
       this.callbacks?.onConnectionStatusChange('connected');
@@ -200,6 +227,7 @@ export class VoiceAssistant {
       }
       
       this.isConnected = false;
+      this.isVoiceAgentConnection = false;
       this.callbacks?.onConnectionStatusChange('disconnected');
       
       console.log('Disconnected from Voice Live service');
@@ -209,7 +237,10 @@ export class VoiceAssistant {
     }
   }
 
-  private createEventHandlers(): VoiceLiveSessionHandlers {
+  private createEventHandlers(
+    onAgentSessionReady?: () => void,
+    onAgentSessionFailed?: (error: Error) => void
+  ): VoiceLiveSessionHandlers {
     return {
       onConnected: async (args: ConnectedEventArgs, context: ConnectionContext) => {
         console.log('🔔 Connected:', args);
@@ -222,6 +253,9 @@ export class VoiceAssistant {
 
       onDisconnected: async (args: DisconnectedEventArgs, context: ConnectionContext) => {
         console.log('🔔 Disconnected:', args);
+        onAgentSessionFailed?.(
+          new Error(`Voice agent disconnected before it was ready: ${args.reason || args.code}`)
+        );
         this.isConnected = false;
         this.callbacks?.onConnectionStatusChange('disconnected');
         this.callbacks?.onEventReceived({
@@ -233,10 +267,46 @@ export class VoiceAssistant {
 
       onError: async (args: ErrorEventArgs, context: ConnectionContext) => {
         console.log('🔔 Error:', args);
+        onAgentSessionFailed?.(args.error);
         this.callbacks?.onError(`Service error: ${args.error.message}`);
         this.callbacks?.onEventReceived({
           type: 'error',
           data: args,
+          timestamp: new Date()
+        });
+      },
+
+      onServerError: async (event, context: SessionContext) => {
+        const message = event.error?.message || 'Voice service returned an error';
+        const error = new Error(message);
+        onAgentSessionFailed?.(error);
+        this.callbacks?.onError(message);
+        this.callbacks?.onEventReceived({
+          type: 'error',
+          data: event,
+          timestamp: new Date()
+        });
+      },
+
+      onSessionCreated: async (event, context: SessionContext) => {
+        console.log('🔔 Session Created:', event);
+        this.callbacks?.onAssistantStatusChange(
+          this.isVoiceAgentConnection ? 'initializing agent' : 'connected'
+        );
+        this.callbacks?.onEventReceived({
+          type: 'session.created',
+          data: event,
+          timestamp: new Date()
+        });
+      },
+
+      onSessionUpdated: async (event, context: SessionContext) => {
+        console.log('🔔 Session Updated:', event);
+        onAgentSessionReady?.();
+        this.callbacks?.onAssistantStatusChange('ready');
+        this.callbacks?.onEventReceived({
+          type: 'session.updated',
+          data: event,
           timestamp: new Date()
         });
       },
@@ -486,7 +556,9 @@ export class VoiceAssistant {
       
       this.callbacks?.onConversationMessage({
         role: 'system',
-        content: 'Conversation started. Start speaking to the assistant!',
+        content: this.isVoiceAgentConnection
+          ? 'Conversation started. Audio is streaming to the selected voice agent through the Voice Live SDK.'
+          : 'Conversation started. Start speaking to the assistant!',
         timestamp: new Date()
       });
       
@@ -568,6 +640,31 @@ export class VoiceAssistant {
     } catch (error) {
       console.error('Failed to configure session:', error);
       throw error;
+    }
+  }
+
+  private createVoiceAgentProxyEndpoint(voiceAgentUrl: string): string {
+    const proxyEndpoint = new URL(window.location.origin);
+    proxyEndpoint.searchParams.set('voice-agent-url', voiceAgentUrl);
+    return proxyEndpoint.toString();
+  }
+
+  private async waitForAgentSessionReady(sessionReady: Promise<void>): Promise<void> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        sessionReady,
+        new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Timed out waiting for voice agent session.updated')),
+            60000
+          );
+        })
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
