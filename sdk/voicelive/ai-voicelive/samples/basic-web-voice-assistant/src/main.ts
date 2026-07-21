@@ -425,7 +425,8 @@ class WebVoiceAssistantApp {
       localStorage.setItem('voiceLiveSettings', JSON.stringify({
         endpoint: config.endpoint,
         voice: config.voice,
-        instructions: config.instructions
+        instructions: config.instructions,
+        useTokenCredential: config.useTokenCredential
         // Note: We don't save API key for security
       }));
     } catch (error) {
@@ -447,6 +448,13 @@ class WebVoiceAssistantApp {
         }
         if (settings.instructions) {
           (document.getElementById('instructions') as HTMLTextAreaElement).value = settings.instructions;
+        }
+        if (typeof settings.useTokenCredential === 'boolean') {
+          const authMethod = settings.useTokenCredential ? 'token' : 'apikey';
+          const authRadio = document.querySelector(
+            `input[name="authMethod"][value="${authMethod}"]`
+          ) as HTMLInputElement | null;
+          authRadio?.click();
         }
       }
     } catch (error) {

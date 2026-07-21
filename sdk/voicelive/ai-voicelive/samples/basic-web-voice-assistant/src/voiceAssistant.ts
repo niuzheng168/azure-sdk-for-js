@@ -11,17 +11,54 @@ import {
   type SessionContext
 } from '@azure/ai-voicelive';
 import { AzureKeyCredential } from '@azure/core-auth';
-import type { TokenCredential, KeyCredential } from '@azure/core-auth';
+import type {
+  AccessToken,
+  GetTokenOptions,
+  KeyCredential,
+  TokenCredential
+} from '@azure/core-auth';
 import { SimpleAudioCapture } from './audioCapture.js';
 
-// Note: DefaultAzureCredential would come from @azure/identity package
-// For this demo, we'll create a mock implementation
-class MockDefaultAzureCredential implements TokenCredential {
-  async getToken(): Promise<{ token: string; expiresOnTimestamp: number } | null> {
-    console.warn('Mock DefaultAzureCredential used - implement proper Azure authentication for production');
+interface LocalTokenResponse {
+  token?: unknown;
+  expiresOnTimestamp?: unknown;
+  error?: unknown;
+}
+
+/**
+ * Gets a development token from the local Vite server.
+ *
+ * The Vite server uses AzureCliCredential, which reuses an `az login` session
+ * without exposing Azure CLI files to browser code.
+ */
+class LocalAzureCredential implements TokenCredential {
+  async getToken(
+    _scopes: string | string[],
+    _options?: GetTokenOptions
+  ): Promise<AccessToken> {
+    const response = await fetch('/api/azure-token', {
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json'
+      }
+    });
+    const body = (await response.json()) as LocalTokenResponse;
+
+    if (!response.ok) {
+      const details = typeof body.error === 'string' ? body.error : response.statusText;
+      throw new Error(`Local Azure authentication failed: ${details}`);
+    }
+
+    if (
+      typeof body.token !== 'string' ||
+      typeof body.expiresOnTimestamp !== 'number'
+    ) {
+      throw new Error('Local Azure token endpoint returned an invalid response');
+    }
+
     return {
-      token: 'mock-token-for-demo',
-      expiresOnTimestamp: Date.now() + 3600000 // 1 hour from now
+      token: body.token,
+      expiresOnTimestamp: body.expiresOnTimestamp
     };
   }
 }
@@ -37,6 +74,7 @@ export interface VoiceAssistantConfig {
 
 const OPENAI_VOICES = ['alloy', 'echo', 'shimmer', 'ash', 'ballad', 'coral', 'sage', 'verse', 'fable', 'onyx', 'nova'];
 const AZURE_REALTIME_NATIVE_VOICE_SUFFIX = '-native';
+const VOICE_LIVE_API_VERSION = '2025-10-01';
 
 export interface VoiceAssistantCallbacks {
   onConnectionStatusChange: (status: string) => void;
@@ -104,8 +142,9 @@ export class VoiceAssistant {
       }
 
       // Create Voice Live client. `apiVersion` defaults to the latest known
-      // version; override only to pin a specific version.
+      // version, but this sample pins the API version exposed by Azure resources.
       this.client = new VoiceLiveClient(config.endpoint, credential, {
+        apiVersion: VOICE_LIVE_API_VERSION,
         defaultSessionOptions: sessionOptions
       });
       
@@ -132,9 +171,8 @@ export class VoiceAssistant {
 
   private _createCredential(config: VoiceAssistantConfig): TokenCredential | KeyCredential {
     if (config.useTokenCredential) {
-      // Use Azure Default Credential (for production scenarios)
-      console.log('🔑 Using Azure Default Credential (token-based authentication)');
-      return new MockDefaultAzureCredential();
+      console.log('🔑 Using the local Vite AzureCliCredential token endpoint');
+      return new LocalAzureCredential();
     } else {
       // Use API Key (for development/simple scenarios)
       if (!config.apiKey) {

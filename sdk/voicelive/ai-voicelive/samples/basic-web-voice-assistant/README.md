@@ -25,14 +25,26 @@ npm install
 ```bash
 npm run dev
 ```
-Opens at: **http://localhost:3000**
+Opens at: **http://127.0.0.1:3000**
 
 ### 3. **Configure & Connect**
-1. Enter your **Voice Live endpoint** (e.g., `wss://your-service.com/v1`)
-2. Enter your **API key**
+1. Enter your **Voice Live endpoint** (for example, `https://your-resource.services.ai.azure.com`)
+2. Choose an authentication method:
+   - **API Key**: enter the resource API key.
+   - **Azure CLI Credential**: run `az login` before starting Vite,
+     then select this option. The local Vite server obtains a token for
+     `https://ai.azure.com/.default`.
 3. Choose a **voice** (OpenAI, Azure standard, or preview Azure realtime native)
 4. Customize **instructions** (optional)
 5. Click **"Connect"**
+
+> The Azure CLI option is for local development only. It exposes a same-origin
+> token endpoint from the Vite development server and therefore must not be
+> served on a public interface. For production browser applications, acquire
+> credentials and connect to Voice Live through a secured application backend.
+>
+> The sample pins Voice Live API version `2025-10-01`, which is the version
+> exposed by standard Azure Voice Live resources.
 
 ### 4. **Start Conversation**
 1. Click **"Start Conversation"**

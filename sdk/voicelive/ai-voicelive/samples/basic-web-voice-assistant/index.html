@@ -36,9 +36,10 @@
                             </label>
                             <label class="radio-label">
                                 <input type="radio" name="authMethod" value="token">
-                                Azure Token Credential (Production)
+                                Azure CLI Credential (Local)
                             </label>
                         </div>
+                        <small>The local Vite server reuses your <code>az login</code> session. Do not expose this development server publicly.</small>
                     </div>
                     <div class="config-item">
                         <label for="voice">Voice:</label>
@@ -156,7 +157,7 @@
     
     <!-- Development utilities (only loads in dev mode) -->
     <script>
-        if (window.location.hostname === 'localhost') {
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             const script = document.createElement('script');
             script.src = 'dev-utils.js';
             document.head.appendChild(script);
