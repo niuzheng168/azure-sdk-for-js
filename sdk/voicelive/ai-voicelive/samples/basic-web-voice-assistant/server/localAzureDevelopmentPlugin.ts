@@ -15,6 +15,14 @@ function isLoopbackHost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+function isHyenaHost(hostname: string): boolean {
+  return /^agents\.[a-z0-9-]+\.hyena\.infra\.ai\.azure\.com$/i.test(hostname);
+}
+
+function isFoundryHost(hostname: string): boolean {
+  return /^[a-z0-9-]+\.services\.ai\.azure\.com$/i.test(hostname);
+}
+
 function parseVoiceAgentUrl(rawUrl: string): URL {
   let url: URL;
   try {
@@ -30,16 +38,22 @@ function parseVoiceAgentUrl(rawUrl: string): URL {
     throw new Error("Credentials are not allowed in the voice agent URL.");
   }
 
-  const isHyenaHost = /^agents\.[a-z0-9-]+\.hyena\.infra\.ai\.azure\.com$/i.test(url.hostname);
-  if (!isHyenaHost && !isLoopbackHost(url.hostname)) {
-    throw new Error("The voice agent URL must target an Azure Agents Hyena endpoint.");
+  const targetsHyena = isHyenaHost(url.hostname);
+  const targetsFoundry = isFoundryHost(url.hostname);
+  if (!targetsHyena && !targetsFoundry && !isLoopbackHost(url.hostname)) {
+    throw new Error("The voice agent URL must target an Azure Agents endpoint.");
   }
-  if (isHyenaHost && url.protocol !== "wss:") {
+  if ((targetsHyena || targetsFoundry) && url.protocol !== "wss:") {
     throw new Error("Remote Azure Agents endpoints must use wss://.");
   }
+  const isHyenaVoicePath =
+    url.pathname.includes("/agents/v2.0/") && url.pathname.endsWith("/endpoint/protocols/voice");
+  const isFoundryVoicePath =
+    /^\/api\/projects\/[^/]+\/agents\/[^/]+\/endpoint\/protocols\/voice$/.test(url.pathname);
   if (
-    !url.pathname.includes("/agents/v2.0/") ||
-    !url.pathname.endsWith("/endpoint/protocols/voice")
+    (targetsHyena && !isHyenaVoicePath) ||
+    (targetsFoundry && !isFoundryVoicePath) ||
+    (isLoopbackHost(url.hostname) && !isHyenaVoicePath && !isFoundryVoicePath)
   ) {
     throw new Error("The URL is not an Agents protocols/voice WebSocket endpoint.");
   }
@@ -150,7 +164,7 @@ async function openVoiceAgentSocket(
     Authorization: authorization,
     "Foundry-Features": voiceAgentFeatureHeader,
   };
-  if (!isLoopbackHost(targetUrl.hostname)) {
+  if (isHyenaHost(targetUrl.hostname)) {
     headers["x-ms-overridden-host"] = targetUrl.hostname;
   }
 

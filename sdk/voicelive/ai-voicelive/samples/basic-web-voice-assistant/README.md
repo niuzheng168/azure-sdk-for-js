@@ -36,8 +36,10 @@ Opens at: **http://127.0.0.1:3000**
    - **Voice Live resource**: enter an endpoint such as
      `https://your-resource.services.ai.azure.com`.
    - **Voice Agent WebSocket**: paste the complete
+     `wss://<resource>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/voice`
+     URL for an existing voice agent. Direct
      `wss://agents.<region>.hyena.infra.ai.azure.com/.../endpoint/protocols/voice`
-     URL for an existing voice agent.
+     URLs are also supported.
 2. For a Voice Live resource, choose an authentication method:
    - **API Key**: enter the resource API key.
    - **Azure CLI Credential**: run `az login` before starting Vite,

@@ -1,6 +1,10 @@
 // Main entry point for Voice Live Web Assistant
 import { VoiceAssistant } from './voiceAssistant.js';
 import type { VoiceAssistantConfig, VoiceAssistantCallbacks } from './voiceAssistant.js';
+import {
+  isVoiceAgentWebSocketUrl,
+  resolveVoiceAssistantTargetType
+} from './connectionTarget.js';
 
 class WebVoiceAssistantApp {
   private voiceAssistant: VoiceAssistant;
@@ -101,6 +105,10 @@ class WebVoiceAssistantApp {
         this.updateTargetConfigurationUI();
       });
     });
+    const endpointInput = document.getElementById('endpoint') as HTMLInputElement;
+    endpointInput.addEventListener('input', () => {
+      this.selectTargetTypeFromEndpoint(endpointInput.value);
+    });
 
     const authMethodRadios = document.querySelectorAll('input[name="authMethod"]');
     authMethodRadios.forEach(radio => {
@@ -111,6 +119,7 @@ class WebVoiceAssistantApp {
 
     // Load saved settings
     this.loadSettings();
+    this.selectTargetTypeFromEndpoint(endpointInput.value);
     this.updateTargetConfigurationUI();
   }
 
@@ -219,7 +228,10 @@ class WebVoiceAssistantApp {
     const targetTypeElement = document.querySelector(
       'input[name="targetType"]:checked'
     ) as HTMLInputElement | null;
-    const targetType = targetTypeElement?.value === 'voice-agent' ? 'voice-agent' : 'voice-live';
+    const targetType = resolveVoiceAssistantTargetType(
+      targetTypeElement?.value === 'voice-agent' ? 'voice-agent' : 'voice-live',
+      endpoint
+    );
     const authMethodElement = document.querySelector('input[name="authMethod"]:checked') as HTMLInputElement;
     const useTokenCredential =
       targetType === 'voice-agent' ||
@@ -284,7 +296,7 @@ class WebVoiceAssistantApp {
       ? 'Voice Agent WebSocket URL:'
       : 'Voice Live Endpoint:';
     endpointInput.placeholder = isVoiceAgent
-      ? 'wss://agents.<region>.hyena.infra.ai.azure.com/.../endpoint/protocols/voice'
+      ? 'wss://<resource>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/voice'
       : 'https://your-resource.services.ai.azure.com';
     endpointHelp.textContent = isVoiceAgent
       ? 'Paste the complete Agents protocols/voice WebSocket URL. Missing api-version and agent_session_id values are added locally.'
@@ -304,6 +316,19 @@ class WebVoiceAssistantApp {
     instructionsConfig.classList.toggle('config-disabled', isVoiceAgent);
     agentManagedConfigNote.classList.toggle('hidden', !isVoiceAgent);
     this.updateAuthenticationUI();
+  }
+
+  private selectTargetTypeFromEndpoint(endpoint: string): void {
+    if (!isVoiceAgentWebSocketUrl(endpoint.trim())) {
+      return;
+    }
+
+    const voiceAgentRadio = document.querySelector(
+      'input[name="targetType"][value="voice-agent"]'
+    ) as HTMLInputElement | null;
+    if (voiceAgentRadio && !voiceAgentRadio.checked) {
+      voiceAgentRadio.click();
+    }
   }
 
   private updateAuthenticationUI(): void {

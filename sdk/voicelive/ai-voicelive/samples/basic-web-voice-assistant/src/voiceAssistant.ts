@@ -18,6 +18,10 @@ import type {
   TokenCredential
 } from '@azure/core-auth';
 import { SimpleAudioCapture } from './audioCapture.js';
+import {
+  resolveVoiceAssistantTargetType,
+  type VoiceAssistantTargetType
+} from './connectionTarget.js';
 
 interface LocalTokenResponse {
   token?: unknown;
@@ -64,7 +68,7 @@ class LocalAzureCredential implements TokenCredential {
 }
 
 export interface VoiceAssistantConfig {
-  targetType: 'voice-live' | 'voice-agent';
+  targetType: VoiceAssistantTargetType;
   endpoint: string;
   apiKey?: string;
   useTokenCredential?: boolean;
@@ -125,11 +129,17 @@ export class VoiceAssistant {
   async connect(config: VoiceAssistantConfig): Promise<void> {
     try {
       this.callbacks?.onConnectionStatusChange('connecting');
-      
+
+      this.isVoiceAgentConnection =
+        resolveVoiceAssistantTargetType(config.targetType, config.endpoint) === 'voice-agent';
+      if (this.isVoiceAgentConnection) {
+        // A voice agent can emit a greeting immediately after connecting. Create
+        // playback while the Connect click still counts as a user gesture.
+        await this.ensurePlaybackAudioContext();
+      }
+
       // Create appropriate credential based on configuration
       const credential = this._createCredential(config);
-      
-      this.isVoiceAgentConnection = config.targetType === 'voice-agent';
 
       // Voice Agent startup can include agent resolution and upstream Voice Live setup.
       const sessionOptions = {
@@ -539,11 +549,10 @@ export class VoiceAssistant {
     }
 
     try {
+      await this.ensurePlaybackAudioContext();
+
       // Initialize audio capture
       await this.audioCapture.initialize();
-      
-      // Setup audio context for playback
-      this.audioContext = new AudioContext();
       
       // Start audio capture
       this.audioCapture.startCapture(
@@ -718,6 +727,10 @@ export class VoiceAssistant {
     }
 
     try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
       // VoiceLive sends raw PCM16 data, not encoded audio
       const sampleRate = 24000; // VoiceLive default output sample rate
       const numberOfChannels = 1; // Mono audio
@@ -832,5 +845,14 @@ export class VoiceAssistant {
     }
     
     console.log('🛑 Audio queue cleared and all sources stopped (barge-in or response change)');
+  }
+
+  private async ensurePlaybackAudioContext(): Promise<void> {
+    if (!this.audioContext || this.audioContext.state === 'closed') {
+      this.audioContext = new AudioContext();
+    }
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
   }
 }
